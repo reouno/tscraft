@@ -27,7 +27,7 @@ jobs:
           node-version: '20'
 
       - name: TypeScript compile
-        run: npx tsc -p .
+        run: npx -y typescript@5.6.2 tsc -p .
 
       - name: Add .nojekyll
         run: |
@@ -48,4 +48,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
