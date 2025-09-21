@@ -3,6 +3,8 @@
 A simple Minecraft-like UI implemented with **TypeScript** and **Three.js**,
 where you can freely place and destroy blocks in a 3D world.
 
+You can try here! https://reouno.github.io/tscraft/
+
 ![Demo](./tscraft_02.gif)
 
 # Usage (http-server)
