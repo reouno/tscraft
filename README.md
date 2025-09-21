@@ -1,31 +1,38 @@
-# 使い方（http-server）
+# TSCraft
 
-このリポジトリは Three.js を CDN から読み込み、TypeScript を素の JS に変換して動かします。`npx http-server` でローカル配信して確認してください。
+A simple Minecraft-like UI implemented with **TypeScript** and **Three.js**,
+where you can freely place and destroy blocks in a 3D world.
 
-## 前提
-- Node.js がインストール済み
-- TypeScript のビルドは `tsc`（グローバル）または `npx tsc` を使用
+# Usage (http-server)
 
-## 手順
-1) ビルド
-- 初回/変更時: `tsc` または `tsc -p .`
-- 監視ビルド（任意）: `tsc -w` または `tsc -p . -w`
-  - 本リポジトリの `tsconfig.json` は `module: none` を指定しており、ブラウザ向けに `main.js` を出力します。
+This repository loads Three.js from a CDN and runs TypeScript compiled into plain JavaScript. Use `npx http-server` to serve it locally for testing.
 
-2) サーブ
-- ルートで: `npx http-server -p 8080`
-- ブラウザで: `http://localhost:8080/` を開く（`index.html` が自動表示されます）
-- ポートが埋まっている場合は `-p 3000` など任意のポートに変更
+## Prerequisites
+- Node.js must be installed  
+- TypeScript build is done with `tsc` (globally installed) or `npx tsc`
 
-## 補足
-- `index.html` は Three.js（CDN）→ `main.js` の順で読み込みます。`main.ts` はグローバル `THREE` を使用しており、`import` は不要です。
-- `file://` で直接開くと CORS などで不安定になるため、必ずローカルサーバー経由で開いてください。
+## Steps
+1) **Build**  
+- For first build / after changes: `tsc` or `tsc -p .`  
+- Watch mode (optional): `tsc -w` or `tsc -p . -w`  
+  - The `tsconfig.json` in this repo specifies `module: none`, and outputs `main.js` for the browser.
 
-## 操作方法（最小仕様）
-- クリック: マウスカーソルをロック（視点操作が有効化）
-- 視点: マウス移動
-- 移動: `W/A/S/D`
-- 走る: `Shift`
-- ジャンプ: `Space`
-- 破壊: 左クリック（クロスヘア先のブロック）
-- 設置: 右クリック（ヒット面の隣に設置、リーチ約5m）
+2) **Serve**  
+- At the project root: `npx http-server -p 8080`  
+- Open in browser: `http://localhost:8080/` (`index.html` will be shown automatically)  
+- If the port is occupied, change it with `-p 3000` or another port.
+
+## Notes
+- `index.html` loads Three.js (CDN) first, then `main.js`.  
+- `main.ts` uses the global `THREE`, so no `import` is needed.  
+- Opening with `file://` directly may cause CORS or other issues—always open through a local server.
+
+## Controls (basic)
+- **Click**: Lock the mouse cursor (enable view control)  
+- **View**: Mouse movement  
+- **Move**: `W/A/S/D`  
+- **Run**: `Shift`  
+- **Jump**: `Space`  
+- **Destroy**: Left click (destroy block at crosshair)  
+- **Place**: Right click (place next to hit surface, reach ≈ 5m)  
+
