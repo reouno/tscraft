@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "module": "none",
+    "lib": ["DOM", "ES2017"],
+    "strict": true,
+    "skipLibCheck": true
+  }
+}
