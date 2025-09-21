@@ -4,8 +4,8 @@ declare const THREE: any;
 
 // --- Basic setup ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xcfe9ff); // softer sky
-scene.fog = new THREE.Fog(0xcfe9ff, 20, 90);
+scene.background = new THREE.Color(0x87ceeb); // clearer sky blue
+scene.fog = new THREE.Fog(0x87ceeb, 25, 110);
 
 const camera = new THREE.PerspectiveCamera(
   75,
@@ -27,13 +27,16 @@ window.addEventListener('resize', () => {
 });
 
 // Soft lighting
-const hemi = new THREE.HemisphereLight(0xf0f8ff, 0xece5d8, 0.8);
+const hemi = new THREE.HemisphereLight(0xf5faff, 0xe6ddcc, 0.9);
 scene.add(hemi);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+dirLight.position.set(5, 10, 3);
+scene.add(dirLight);
 
 // --- World / ground ---
 const GROUND_SIZE = 64; // visual ground
 const groundGeometry = new THREE.BoxGeometry(GROUND_SIZE, 1, GROUND_SIZE);
-const groundMaterial = new THREE.MeshLambertMaterial({ color: 0xb7e0a5 });
+const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x8bc34a }); // clearer green
 const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 ground.position.y = -0.5; // top at y = 0
 ground.name = 'GROUND';
@@ -122,7 +125,7 @@ type BlockMesh = {
 
 const blocks = new Map<string, BlockMesh>();
 const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
-const blockMaterial = new THREE.MeshLambertMaterial({ color: 0xd9bfa3 }); // soft dirt-like
+const blockMaterial = new THREE.MeshLambertMaterial({ color: 0xa97c50 }); // clearer dirt-like
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
