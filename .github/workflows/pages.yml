@@ -27,7 +27,7 @@ jobs:
           node-version: '20'
 
       - name: TypeScript compile
-        run: npx -y typescript@5.6.2 tsc -p .
+        run: npx -y -p typescript@5.6.2 tsc -p .
 
       - name: Add .nojekyll
         run: |
