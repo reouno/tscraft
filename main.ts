@@ -312,10 +312,13 @@ function animate() {
   const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
   const speed = MOVE_SPEED * (sprint ? SPRINT_MULT : 1);
 
-  // Camera orientation -> world directions
-  const yaw = player.yaw;
-  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  // Camera orientation -> world directions (robust)
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0; // no vertical movement from look pitch
+  if (forward.lengthSq() > 0) forward.normalize();
+  // Compute right from current view direction
+  const right = new THREE.Vector3().copy(forward).cross(new THREE.Vector3(0, 1, 0)).normalize();
 
   let wish = new THREE.Vector3();
   wish.addScaledVector(forward, moveZ).addScaledVector(right, moveX);
