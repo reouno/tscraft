@@ -36,11 +36,12 @@ scene.add(dirLight);
 // --- World / ground ---
 const GROUND_SIZE = 64; // visual ground
 const groundGeometry = new THREE.BoxGeometry(GROUND_SIZE, 1, GROUND_SIZE);
-const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x8bc34a }); // clearer green
+const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x8bc34a, roughness: 1, metalness: 0 }); // clearer green
 const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 ground.position.y = -0.5; // top at y = 0
 ground.name = 'GROUND';
 scene.add(ground);
+
 
 // --- Crosshair ---
 function addCrosshair() {
@@ -77,7 +78,14 @@ const SPRINT_MULT = 1.5;
 const JUMP_VELOCITY = 8.0;
 
 const keys: Record<string, boolean> = {};
-window.addEventListener('keydown', (e: KeyboardEvent) => (keys[e.code] = true));
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  keys[e.code] = true;
+  if (e.code === 'Digit1') currentBlockType = 'dirt';
+  if (e.code === 'Digit2') currentBlockType = 'stone';
+  if (e.code === 'Digit3') currentBlockType = 'oak';
+  if (e.code === 'KeyE') exportWorld();
+  if (e.code === 'KeyI') ensureImportInput().click();
+});
 window.addEventListener('keyup', (e: KeyboardEvent) => (keys[e.code] = false));
 
 // Pointer Lock
@@ -120,24 +128,342 @@ type Vec3Like = { x: number; y: number; z: number };
 type AABB = { min: Vec3Like; max: Vec3Like };
 type BlockMesh = {
   position: { set(x: number, y: number, z: number): void };
-  userData?: { key?: string };
+  material?: any;
+  userData?: { key?: string; type?: string };
 };
 
 const blocks = new Map<string, BlockMesh>();
 const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
-const blockMaterial = new THREE.MeshLambertMaterial({ color: 0xa97c50 }); // clearer dirt-like
+
+function makeDirtTileTexture(options?: {
+  size?: number;
+  base?: string;
+  light?: string;
+  dark?: string;
+  speckle?: number; // 0..1 density
+  border?: string;
+  borderWidth?: number;
+  seed?: number;
+  tileRepeat?: number;
+}) {
+  const size = options?.size ?? 32;
+  const base = options?.base ?? '#4a2f1a'; // darker brown
+  const light = options?.light ?? '#6e5030';
+  const dark = options?.dark ?? '#2b1a0e';
+  const speckle = options?.speckle ?? 0.12;
+  const border = options?.border ?? '#000000';
+  const borderWidth = options?.borderWidth ?? 0; // no border by default
+  let seed = options?.seed ?? 1337;
+  const tileRepeat = options?.tileRepeat ?? 2;
+
+  function rnd() {
+    // simple LCG
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  // base fill
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+
+  // speckles (tileable by wrapping draw calls)
+  const count = Math.floor(size * size * speckle);
+  for (let i = 0; i < count; i++) {
+    const x = Math.floor(rnd() * size);
+    const y = Math.floor(rnd() * size);
+    ctx.fillStyle = rnd() < 0.5 ? light : dark;
+    const drawAt = (dx: number, dy: number) => {
+      ctx.fillRect(dx, dy, 1, 1);
+    };
+    // draw with wrapped copies so edges match
+    for (const ox of [-size, 0, size]) {
+      for (const oy of [-size, 0, size]) {
+        drawAt(x + ox, y + oy);
+      }
+    }
+  }
+
+  // subtle inner border to make block edges visible
+  if (borderWidth > 0) {
+    ctx.strokeStyle = border;
+    ctx.lineWidth = borderWidth;
+    const inset = borderWidth / 2;
+    ctx.strokeRect(inset, inset, size - borderWidth, size - borderWidth);
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(tileRepeat, tileRepeat);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makeStoneTileTexture(options?: {
+  size?: number;
+  base?: string;
+  light?: string;
+  dark?: string;
+  speckle?: number;
+  seed?: number;
+  tileRepeat?: number;
+}) {
+  const size = options?.size ?? 32;
+  const base = options?.base ?? '#7a7a7a';
+  const light = options?.light ?? '#9a9a9a';
+  const dark = options?.dark ?? '#5a5a5a';
+  const speckle = options?.speckle ?? 0.0; // we will draw blobs instead
+  let seed = options?.seed ?? 4242;
+  const tileRepeat = options?.tileRepeat ?? 2;
+
+  function rnd() {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+  // draw simple cobblestone blobs
+  const blobs = Math.floor((size * size) * 0.015);
+  for (let i = 0; i < blobs; i++) {
+    const cx = rnd() * size;
+    const cy = rnd() * size;
+    const r = 1.8 + rnd() * 2.5; // radius 1.8..4.3 px
+    // pick shade
+    const t = rnd();
+    const fill = t < 0.33 ? light : t < 0.66 ? base : dark;
+    const stroke = '#4c4c4c';
+    // draw with wrapping to keep tileable
+    for (const ox of [-size, 0, size]) {
+      for (const oy of [-size, 0, size]) {
+        ctx.beginPath();
+        ctx.arc(cx + ox, cy + oy, r, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(tileRepeat, tileRepeat);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makeOakPlanksTexture(options?: {
+  size?: number;
+  base?: string;
+  light?: string;
+  dark?: string;
+  seams?: string;
+  seed?: number;
+  tileRepeat?: number;
+}) {
+  const size = options?.size ?? 32;
+  const base = options?.base ?? '#b0894a';
+  const light = options?.light ?? '#c9a35f';
+  const dark = options?.dark ?? '#8a6a3d';
+  const seams = options?.seams ?? '#7a5a3a';
+  let seed = options?.seed ?? 2024;
+  const tileRepeat = options?.tileRepeat ?? 2;
+
+  function rnd() {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  // base fill
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+  // vertical plank seams (3 planks)
+  ctx.strokeStyle = seams;
+  ctx.lineWidth = 1;
+  for (const x of [Math.floor(size / 3), Math.floor((2 * size) / 3)]) {
+    ctx.beginPath();
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, size);
+    ctx.stroke();
+  }
+  // subtle horizontal grain lines
+  for (let y = 0; y < size; y += 2) {
+    ctx.fillStyle = rnd() < 0.5 ? light : dark;
+    ctx.globalAlpha = 0.05;
+    ctx.fillRect(0, y, size, 1);
+    ctx.globalAlpha = 1.0;
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(tileRepeat, tileRepeat);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// --- Block types registry (simple) ---
+type BlockTypeId = 'dirt' | 'stone' | 'oak';
+type BlockTypeDef = { id: BlockTypeId; material: any };
+const BLOCK_TYPES: Record<BlockTypeId, BlockTypeDef> = {
+  dirt: { id: 'dirt', material: new THREE.MeshStandardMaterial({ map: makeDirtTileTexture({ tileRepeat: 2, borderWidth: 0 }), roughness: 1, metalness: 0 }) },
+  stone: { id: 'stone', material: new THREE.MeshStandardMaterial({ map: makeStoneTileTexture({ tileRepeat: 2 }), roughness: 1, metalness: 0 }) },
+  oak: { id: 'oak', material: new THREE.MeshStandardMaterial({ map: makeOakPlanksTexture({ tileRepeat: 2 }), roughness: 1, metalness: 0 }) },
+};
+
+function getBlockMaterial(type: BlockTypeId = 'dirt') {
+  return BLOCK_TYPES[type].material;
+}
+
+let currentBlockType: BlockTypeId = 'dirt';
+
+// --- Persistence (LocalStorage + JSON export/import) ---
+const WORLD_SAVE_KEY = 'world_v1';
+let saveTimer: number | null = null;
+
+type WorldSave = {
+  version: number;
+  player: { x: number; y: number; z: number; yaw: number; pitch: number };
+  blocks: Array<[number, number, number, BlockTypeId]>;
+};
+
+function serializeWorld(): WorldSave {
+  const out: WorldSave = {
+    version: 1,
+    player: { x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch: player.pitch },
+    blocks: [],
+  };
+  for (const k of blocks.keys()) {
+    const mesh = blocks.get(k)!;
+    const { x, y, z } = parseKey(k);
+    const type = (mesh.userData?.type as BlockTypeId) || 'dirt';
+    out.blocks.push([x, y, z, type]);
+  }
+  return out;
+}
+
+function applyWorld(save: WorldSave) {
+  // clear blocks
+  for (const m of Array.from(blocks.values())) {
+    worldGroup.remove(m as any);
+  }
+  blocks.clear();
+  for (const [x, y, z, t] of save.blocks) {
+    addBlock(x, y, z, t);
+  }
+  player.x = save.player.x;
+  player.y = save.player.y;
+  player.z = save.player.z;
+  player.yaw = save.player.yaw;
+  player.pitch = save.player.pitch;
+  camera.position.set(player.x, player.y + HEAD_OFFSET, player.z);
+  camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+}
+
+function saveWorld() {
+  try {
+    const data = serializeWorld();
+    localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+function scheduleSave() {
+  if (saveTimer) window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    saveWorld();
+    saveTimer = null;
+  }, 3000);
+}
+
+function loadWorld(): boolean {
+  try {
+    const raw = localStorage.getItem(WORLD_SAVE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw) as WorldSave;
+    if (!data || data.version !== 1) return false;
+    applyWorld(data);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function downloadBlob(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportWorld() {
+  const data = serializeWorld();
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const ts = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const name = `world-${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}-${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.json`;
+  downloadBlob(name, blob);
+}
+
+let importInput: HTMLInputElement | null = null;
+function ensureImportInput() {
+  if (importInput) return importInput;
+  importInput = document.createElement('input');
+  importInput.type = 'file';
+  importInput.accept = 'application/json';
+  importInput.style.display = 'none';
+  document.body.appendChild(importInput);
+  importInput.addEventListener('change', () => {
+    const f = importInput!.files && importInput!.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const json = JSON.parse(String(reader.result));
+        if (json && json.version === 1) {
+          applyWorld(json);
+          saveWorld();
+        }
+      } catch {}
+      importInput!.value = '';
+    };
+    reader.readAsText(f);
+  });
+  return importInput;
+}
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
 
-function addBlock(x: number, y: number, z: number) {
+function addBlock(x: number, y: number, z: number, type: BlockTypeId = 'dirt') {
   const k = keyOf(x, y, z);
   if (blocks.has(k)) return;
-  const mesh = new THREE.Mesh(blockGeometry, blockMaterial);
+  const mesh = new THREE.Mesh(blockGeometry, getBlockMaterial(type));
   mesh.position.set(x + 0.5, y + 0.5, z + 0.5); // center of voxel
   mesh.userData.key = k;
+  mesh.userData.type = type;
   worldGroup.add(mesh);
   blocks.set(k, mesh);
+  scheduleSave();
 }
 
 function removeBlockAtKey(k: string) {
@@ -146,6 +472,7 @@ function removeBlockAtKey(k: string) {
   worldGroup.remove(m);
   // Note: geometry/material are shared; do not dispose here
   blocks.delete(k);
+  scheduleSave();
 }
 
 // --- Raycast / interaction ---
@@ -222,7 +549,7 @@ function tryPlaceBlock() {
   const MAX = 32;
   if (Math.abs(x) > MAX || Math.abs(z) > MAX || y < 0 || y > 32) return;
   if (willCollideWithPlayer(x, y, z)) return;
-  addBlock(x, y, z);
+  addBlock(x, y, z, currentBlockType);
 }
 
 function tryRemoveBlock() {
@@ -295,8 +622,10 @@ function collideZ(newZ: number) {
 camera.position.set(player.x, player.y + HEAD_OFFSET, player.z);
 camera.lookAt(0, 0, 0);
 
-// Place one starter block for reference
-addBlock(0, 0, 0);
+// Load saved world or place one starter block for reference
+const loaded = loadWorld();
+if (!loaded) addBlock(0, 0, 0, 'dirt');
+window.addEventListener('beforeunload', () => saveWorld());
 
 // --- Main loop ---
 let lastTime = performance.now();
