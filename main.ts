@@ -36,7 +36,74 @@ scene.add(dirLight);
 // --- World / ground ---
 const GROUND_SIZE = 64; // visual ground
 const groundGeometry = new THREE.BoxGeometry(GROUND_SIZE, 1, GROUND_SIZE);
-const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x8bc34a, roughness: 1, metalness: 0 }); // clearer green
+
+function makeGrassTileTexture(options?: {
+  size?: number;
+  base?: string;
+  light?: string;
+  dark?: string;
+  blade?: string;
+  speckle?: number;
+  tileRepeat?: number;
+  seed?: number;
+}) {
+  const size = options?.size ?? 32;
+  const base = options?.base ?? '#2f6b22'; // deeper green
+  const light = options?.light ?? '#4f9a36';
+  const dark = options?.dark ?? '#235019';
+  const blade = options?.blade ?? '#3e7f2a';
+  const speckle = options?.speckle ?? 0.10;
+  const tileRepeat = options?.tileRepeat ?? 16;
+  let seed = options?.seed ?? 777;
+
+  function rnd() {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0xffffffff;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  // base fill
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, size, size);
+
+  // speckled patches
+  const count = Math.floor(size * size * speckle);
+  for (let i = 0; i < count; i++) {
+    const x = Math.floor(rnd() * size);
+    const y = Math.floor(rnd() * size);
+    ctx.fillStyle = rnd() < 0.5 ? light : dark;
+    const drawAt = (dx: number, dy: number) => ctx.fillRect(dx, dy, 1, 1);
+    for (const ox of [-size, 0, size]) {
+      for (const oy of [-size, 0, size]) drawAt(x + ox, y + oy);
+    }
+  }
+
+  // sparse short blades (1x2 or 2x1 pixels)
+  for (let i = 0; i < Math.floor(size * 0.6); i++) {
+    const x = Math.floor(rnd() * size);
+    const y = Math.floor(rnd() * size);
+    ctx.fillStyle = blade;
+    const vert = rnd() < 0.5;
+    const drawAt = (dx: number, dy: number) => ctx.fillRect(dx, dy, vert ? 1 : 2, vert ? 2 : 1);
+    for (const ox of [-size, 0, size]) {
+      for (const oy of [-size, 0, size]) drawAt(x + ox, y + oy);
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(tileRepeat, tileRepeat);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+const groundTexture = makeGrassTileTexture({ tileRepeat: 16 });
+const groundMaterial = new THREE.MeshStandardMaterial({ map: groundTexture, roughness: 1, metalness: 0 });
 const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 ground.position.y = -0.5; // top at y = 0
 ground.name = 'GROUND';
@@ -85,6 +152,7 @@ window.addEventListener('keydown', (e: KeyboardEvent) => {
   if (e.code === 'Digit3') currentBlockType = 'oak';
   if (e.code === 'KeyE') exportWorld();
   if (e.code === 'KeyI') ensureImportInput().click();
+  if (e.code === 'KeyC') clearSavedWorld();
 });
 window.addEventListener('keyup', (e: KeyboardEvent) => (keys[e.code] = false));
 
@@ -336,6 +404,7 @@ let currentBlockType: BlockTypeId = 'dirt';
 // --- Persistence (LocalStorage + JSON export/import) ---
 const WORLD_SAVE_KEY = 'world_v1';
 let saveTimer: number | null = null;
+let allowSaving = true;
 
 type WorldSave = {
   version: number;
@@ -377,6 +446,7 @@ function applyWorld(save: WorldSave) {
 }
 
 function saveWorld() {
+  if (!allowSaving) return;
   try {
     const data = serializeWorld();
     localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(data));
@@ -384,6 +454,7 @@ function saveWorld() {
 }
 
 function scheduleSave() {
+  if (!allowSaving) return;
   if (saveTimer) window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
     saveWorld();
@@ -449,6 +520,22 @@ function ensureImportInput() {
     reader.readAsText(f);
   });
   return importInput;
+}
+
+function clearSavedWorld() {
+  const ok = window.confirm('Delete saved data. Are you sure?');
+  if (!ok) return;
+  try {
+    // Prevent any further save writes (e.g., beforeunload or pending timer)
+    allowSaving = false;
+    if (saveTimer) {
+      window.clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    localStorage.removeItem(WORLD_SAVE_KEY);
+  } catch {}
+  // Reload to reinitialize state cleanly
+  window.location.reload();
 }
 
 const worldGroup = new THREE.Group();

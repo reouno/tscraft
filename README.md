@@ -3,6 +3,8 @@
 A simple Minecraft-like UI implemented with **TypeScript** and **Three.js**,
 where you can freely place and destroy blocks in a 3D world.
 
+![Demo](./tscraft_02.gif)
+
 # Usage (http-server)
 
 This repository loads Three.js from a CDN and runs TypeScript compiled into plain JavaScript. Use `npx http-server` to serve it locally for testing.
